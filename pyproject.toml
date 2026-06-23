@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Echo"
+version = "0.0.1"
+description = "TEMPORARY"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "sentence-transformers",
+    "numpy",
+    "fastapi",
+    "uvicorn",
+    "pyyaml",
+    "pydantic"
+]
+
+[project.scripts]
+echo-embedder = "echo.api.embedder_api:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]

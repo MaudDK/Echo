@@ -1,0 +1,8 @@
+# # configs/embedder/embedder.yaml
+embedder:
+  model_name: "intfloat/multilingual-e5-large"
+  device: null              # null = auto-detect (cuda if available, else cpu)
+  default_batch_size: 32    # internal inference batching — tune for GPU memory/throughput
+  normalize: true           # whether to L2-normalize embeddings by default
+  trust_remote_code: true   # required for some models (e.g. Qwen3, custom architectures)
+  warm_up: true             # run a dummy encode at load time to avoid first-request latency spike

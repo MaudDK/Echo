@@ -1,0 +1,28 @@
+# Dockerfile.embedder.cpu
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml .
+COPY src/ src/
+
+# Install CPU-only torch avoids pulling ~5GB of unused CUDA libraries
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir .
+
+COPY configs/ configs/
+ENV ECHO_CONFIGS_DIR=/app/configs
+
+# Pre-download model at build time
+#ARG MODEL_NAME=intfloat/multilingual-e5-large
+#RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${MODEL_NAME}', trust_remote_code=True)"
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["echo-embedder"]

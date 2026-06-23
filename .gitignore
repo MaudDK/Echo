@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Secrets
+.env
+outline.txt

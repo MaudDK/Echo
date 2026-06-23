@@ -1,0 +1,23 @@
+# configs/embedder/prefixes.yaml
+
+# E5
+intfloat/multilingual-e5-large:
+  query: "query: "
+  passage: "passage: "
+
+intfloat/multilingual-e5-base:
+  query: "query: "
+  passage: "passage: "
+
+# Qwen3 Embedding
+Qwen/Qwen3-Embedding-0.6B:
+  query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+  passage: ""
+
+Qwen/Qwen3-Embedding-4B:
+  query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+  passage: ""
+
+Qwen/Qwen3-VL-Embedding-2B:
+  query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+  passage: ""

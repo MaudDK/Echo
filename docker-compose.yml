@@ -1,0 +1,39 @@
+services:
+  embedder-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedder.cpu
+      args:
+        MODEL_NAME: intfloat/multilingual-e5-large
+    volumes:
+      - ./configs:/app/configs
+      - ${HF_CACHE_PATH}:/root/.cache/huggingface
+    ports:
+      - "${EMBEDDER_CPU_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  embedder-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedder.gpu
+    volumes:
+      - ./configs:/app/configs
+      - ${HF_CACHE_PATH}:/root/.cache/huggingface
+    ports:
+      - "${EMBEDDER_GPU_PORT}:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
