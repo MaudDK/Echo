@@ -57,9 +57,9 @@ class Embedder:
             texts,
             normalize_embeddings=normalize,
             batch_size=batch_size,
-            show_progress_bar=show_progress_bar,
+            show_progress_bar= not is_query,
             convert_to_numpy=True
         )
         latency_ms = (time.perf_counter() - start) * 1000
         logger.info(f"Encoded {len(texts)} texts in {latency_ms:.2f}ms")
-        return embeds
+        return embeds, latency_ms

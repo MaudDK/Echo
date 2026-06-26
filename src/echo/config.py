@@ -27,6 +27,3 @@ def load_yaml(filename: str) -> dict:
     logger.info(f"Loaded config '{filename}' from {path}" )
     _config_cache[filename] = config
     return config
-
-if __name__ == "__main__":
-    print(load_yaml('embedder.yaml'))

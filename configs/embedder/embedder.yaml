@@ -1,4 +1,3 @@
-# # configs/embedder/embedder.yaml
 embedder:
   model_name: "intfloat/multilingual-e5-large"
   device: null              # null = auto-detect (cuda if available, else cpu)

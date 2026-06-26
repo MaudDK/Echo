@@ -1,5 +1,5 @@
 api:
-  max_batch_size: 256
+  max_batch_size: 40000
   port: 8080
-  prod: False
+  prod: True
   log_level: "INFO"   # dev: DEBUG, prod: INFO or WARNING

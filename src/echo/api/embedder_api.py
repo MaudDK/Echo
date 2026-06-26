@@ -65,6 +65,7 @@ class EmbedResponse(BaseModel):
     embeddings: List[List[float]]
     dimension: int
     model: str
+    latency: float
 
 @app.get("/health")
 def health():
@@ -77,7 +78,7 @@ def embed(req: EmbedRequest):
     if embedder is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     try:
-        embeddings = embedder.encode(req.inputs, normalize=req.normalize)
+        embeddings, ms = embedder.encode(req.inputs, normalize=req.normalize)
     except Exception as e:
         logger.exception("Embedding inference failed")
         raise HTTPException(status_code=500, detail=str(e))
@@ -85,7 +86,8 @@ def embed(req: EmbedRequest):
     return EmbedResponse(
         embeddings=embeddings.tolist(),
         dimension=embedder.dim,
-        model=MODEL_NAME
+        model=MODEL_NAME,
+        latency=ms
     )
 
 def run():

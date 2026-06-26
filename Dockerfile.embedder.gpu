@@ -1,17 +1,13 @@
-# Dockerfile.embedder.gpu
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+FROM python:3.11-slim
 
-# the CUDA base image has no Python at all must be installed
-RUN apt-get update && apt-get install -y python3.11 python3-pip curl && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY pyproject.toml .
 COPY src/ src/
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[embedder]"
 
 COPY configs/ configs/
 ENV ECHO_CONFIGS_DIR=/app/configs
@@ -22,7 +18,7 @@ ENV ECHO_CONFIGS_DIR=/app/configs
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["echo-embedder"]
