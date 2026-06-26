@@ -1,0 +1,7 @@
+# configs/retrieval/api.yaml
+api:
+  port: 8090
+  embedder_url: "http://embedder-cpu:8080" # "http://embedder-gpu:8080"  # or "http://localhost:8080" if running locally
+  index_path: "indexes/faiss" #null   # set once you have a saved index to load
+  prod: True
+  log_level: "INFO"

@@ -3,7 +3,12 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
+indexes/
+frontend/
 
 # Secrets
 .env
+scripts/
+generation/
+hidden/
 outline.txt

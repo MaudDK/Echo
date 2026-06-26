@@ -1,0 +1,8 @@
+# configs/vector_store/faiss.yaml
+vector_store:
+  variant: "hnsw"
+  dim: 1024
+  hnsw:
+    m: 32
+    ef_construction: 200
+    ef_search: 64

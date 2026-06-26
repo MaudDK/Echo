@@ -8,17 +8,20 @@ version = "0.0.1"
 description = "TEMPORARY"
 requires-python = ">=3.10"
 dependencies = [
-    "torch",
-    "sentence-transformers",
-    "numpy",
     "fastapi",
     "uvicorn",
     "pyyaml",
-    "pydantic"
+    "pydantic",
+    "python-dotenv"
 ]
+
+[project.optional-dependencies]
+embedder = ["torch", "sentence-transformers", "numpy"]
+retrieval = ["faiss-cpu", "pandas", "httpx"]
 
 [project.scripts]
 echo-embedder = "echo.api.embedder_api:run"
+echo-retrieval = "echo.api.retrieval_api:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

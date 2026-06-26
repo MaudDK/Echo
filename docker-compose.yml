@@ -3,8 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.embedder.cpu
-      args:
-        MODEL_NAME: intfloat/multilingual-e5-large
+    profiles: [cpu]
     volumes:
       - ./configs:/app/configs
       - ${HF_CACHE_PATH}:/root/.cache/huggingface
@@ -21,6 +20,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.embedder.gpu
+    profiles: [gpu]
     volumes:
       - ./configs:/app/configs
       - ${HF_CACHE_PATH}:/root/.cache/huggingface
@@ -37,3 +37,57 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+
+  faiss-rag-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.retrieval
+    profiles: [cpu]
+    volumes:
+      - ./configs:/app/configs
+      - ${INDEX_PATH_DIR}:/app/indexes
+    ports:
+      - "${RETRIEVAL_PORT}:8090"
+    depends_on:
+      embedder-cpu:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  faiss-rag-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.retrieval
+    profiles: [gpu]
+    volumes:
+      - ./configs:/app/configs
+      - ${INDEX_PATH_DIR}:/app/indexes
+    ports:
+      - "${RETRIEVAL_PORT}:8090"
+    depends_on:
+      embedder-gpu:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+# services:
+#   ollama:
+#     image: ollama/ollama:latest
+#     volumes:
+#       - ${OLLAMA_MODELS_PATH}:/root/.ollama
+#     ports:
+#       - "${OLLAMA_PORT}:11434"
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - capabilities: [gpu]
+#     restart: unless-stopped

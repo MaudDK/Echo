@@ -10,8 +10,7 @@ COPY src/ src/
 
 # Install CPU-only torch avoids pulling ~5GB of unused CUDA libraries
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[embedder]"
 
 COPY configs/ configs/
 ENV ECHO_CONFIGS_DIR=/app/configs
@@ -22,7 +21,7 @@ ENV ECHO_CONFIGS_DIR=/app/configs
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["echo-embedder"]
