@@ -31,7 +31,7 @@ if not EMBEDDER_URL:
 
 INDEX_PATH = api_config.get("index_path")
 
-retrieval_service: RetrievalService = None
+retrieval_service: RetrievalService | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     retrieval_service = RetrievalService(embedder_client, vector_store)
     yield
     logger.info("Shutting down retrieval service")
+    embedder_client.close()
 
 
 app = FastAPI(title="Echo Retrieval API", version="1.0", lifespan=lifespan)
