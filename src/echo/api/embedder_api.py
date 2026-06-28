@@ -2,6 +2,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from typing import List
+import time
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ if api_config.get("prod", False):
 
 from echo.indexing.embedders.embedder import Embedder
 
-embedder: Embedder = None
+embedder: Embedder | None = None
 
 if not embedder_config:
     raise ValueError("embedder.yaml missing required 'embedder' section")
@@ -59,6 +60,10 @@ class EmbedRequest(BaseModel):
         max_length=MAX_BATCH_SIZE,
         description="List of texts to embed. Capped at MAX_BATCH_SIZE per request to bound memory/latency."
     )
+    is_query: bool = Field(
+        default=False,
+        description="True applies the model's query prefix; False applies the passage prefix."
+    )
     normalize: bool = embedder_config.get("normalize", True)
 
 class EmbedResponse(BaseModel):
@@ -78,7 +83,11 @@ def embed(req: EmbedRequest):
     if embedder is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     try:
-        embeddings, ms = embedder.encode(req.inputs, normalize=req.normalize)
+        start = time.perf_counter()
+        embeddings = embedder.encode(req.inputs, is_query=req.is_query, normalize=req.normalize)
+        latency = time.perf_counter() - start
+        logger.info(f"Encoded {len(req.inputs)} texts in {latency:.2f}ms")
+
     except Exception as e:
         logger.exception("Embedding inference failed")
         raise HTTPException(status_code=500, detail=str(e))
@@ -87,7 +96,7 @@ def embed(req: EmbedRequest):
         embeddings=embeddings.tolist(),
         dimension=embedder.dim,
         model=MODEL_NAME,
-        latency=ms
+        latency=latency
     )
 
 def run():

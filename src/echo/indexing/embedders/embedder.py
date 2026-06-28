@@ -52,7 +52,6 @@ class Embedder:
         if prefix:
             texts = [f"{prefix}{t}" for t in texts]
 
-        start = time.perf_counter()
         embeds = self.model.encode(
             texts,
             normalize_embeddings=normalize,
@@ -60,6 +59,5 @@ class Embedder:
             show_progress_bar= not is_query,
             convert_to_numpy=True
         )
-        latency_ms = (time.perf_counter() - start) * 1000
-        logger.info(f"Encoded {len(texts)} texts in {latency_ms:.2f}ms")
-        return embeds, latency_ms
+        
+        return embeds
