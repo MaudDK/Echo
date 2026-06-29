@@ -1,7 +1,10 @@
+import json
+import logging
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Depends, Header
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from echo.config import load_yaml
@@ -17,9 +20,12 @@ from echo.generation.tools.document_search import (
 from echo.generation.tools.web_search import WEB_SEARCH_SCHEMA, make_web_search_handler
 
 
+logger = logging.getLogger(__name__)
+
 agent_config = load_yaml("generation/agent.yaml").get("agent", {})
 tools_config = agent_config.get("tools", {})
 llm_api_url = agent_config.get("llm_api_url", "http://localhost:8100")
+system_prompt = agent_config.get("system_prompt", "You are a helpful assistant.")
 _storage_config = load_yaml("store/storage.yaml").get("storage", {})
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -67,11 +73,13 @@ def build_tool_registry() -> ToolRegistry:
 
 def build_agent(sess: Session, token: str) -> Agent:
     return Agent(
+        system_prompt=system_prompt,
         llm_api_url=llm_api_url,
         token=token,
         tool_registry=build_tool_registry(),
         max_steps=agent_config.get("max_steps", 5),
         temperature=agent_config.get("temperature", 0.0),
+        think=agent_config.get("think", True),
         messages=sess.messages or None,
     )
 
@@ -130,6 +138,44 @@ def send_message(
         session_id=session_id,
         answer=result["answer"],
         tool_calls_made=result["tool_calls_made"],
+    )
+
+
+@router.post("/{session_id}/message/stream")
+def send_message_stream(
+    session_id: str,
+    req: MessageRequest,
+    authorization: str = Header(..., description="Bearer <token>"),
+    user: User = Depends(current_user),
+):
+    """Stream the agent's thinking/tokens/tool-calls/answer as Server-Sent
+    Events (over POST). The transcript is persisted once the stream completes."""
+    sess = owned_session(session_id, user)
+    is_first = not sess.messages  # name the session from its opening message
+    _, _, token = authorization.partition(" ")
+    agent = build_agent(sess, token)
+
+    def event_stream():
+        try:
+            for event in agent.send_stream(req.message):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.exception("Streaming generation failed")
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+        finally:
+            # Persist whatever accumulated, even on early disconnect/error.
+            session_store.save(session_id, agent.messages)
+            if is_first:
+                title = req.message.strip().replace("\n", " ")[:40]
+                if title:
+                    session_store.set_name(session_id, title)
+            agent.close()
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

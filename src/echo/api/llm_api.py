@@ -1,9 +1,11 @@
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from echo.config import load_yaml
@@ -39,6 +41,7 @@ class GenerationRequest(BaseModel):
     messages: List[Dict[str, Any]] = Field(..., description="List of messages for the LLM")
     tools: List[Dict[str, Any]] = Field(default=None, description="Optional list of tools for the LLM")
     temperature: float = Field(default=0.7, description="Temperature for response generation")
+    think: bool = Field(default=True, description="Ask reasoning models to stream thinking (stream endpoint only)")
 
 
 class GenerationResponse(BaseModel):
@@ -74,3 +77,22 @@ def chat_endpoint(request: GenerationRequest, user: User = Depends(current_user)
         tools=response.get("tools", []),
         latency=latency,
     )
+
+
+@router.post("/chat/stream")
+def chat_stream_endpoint(request: GenerationRequest, user: User = Depends(current_user)):
+    """Stream raw Ollama chat chunks as newline-delimited JSON. The agent
+    consumes this to re-emit token/thinking/tool events to its own client."""
+    if llm_client is None:
+        raise HTTPException(status_code=503, detail="LLM client not initialized")
+
+    def ndjson():
+        for chunk in llm_client.chat_stream(
+            request.messages,
+            tools=request.tools,
+            temperature=request.temperature,
+            think=request.think,
+        ):
+            yield json.dumps(chunk) + "\n"
+
+    return StreamingResponse(ndjson(), media_type="application/x-ndjson")

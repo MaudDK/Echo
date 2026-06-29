@@ -1,0 +1,3 @@
+storage:
+  db: "data/stores.db"
+  token_ttl_seconds: 86400

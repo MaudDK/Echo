@@ -1,6 +1,7 @@
+import json
 import logging
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Iterator, Optional
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,48 @@ class OllamaClient:
                 time.sleep(wait)
         
         raise RuntimeError(f"Ollama service unreachable after {self.max_retries} retries") from last_exec
+
+    def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.7,
+        think: bool = True,
+    ) -> Iterator[Dict[str, Any]]:
+        """Yield raw Ollama chat chunks as they arrive.
+
+        Each chunk carries a partial ``message`` (``content`` and/or ``thinking``
+        deltas, and ``tool_calls`` once the model decides to call them). ``think``
+        asks reasoning models to expose their reasoning; models that don't
+        support it reject it with 400, so we retry once without it.
+        """
+        def _payload(with_think: bool) -> Dict[str, Any]:
+            p = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+                "options": {"temperature": temperature},
+            }
+            if tools:
+                p["tools"] = tools
+            if with_think:
+                p["think"] = True
+            return p
+
+        for attempt_think in (think, False) if think else (False,):
+            try:
+                with self._client.stream("POST", "/api/chat", json=_payload(attempt_think)) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if line:
+                            yield json.loads(line)
+                return
+            except httpx.HTTPStatusError as e:
+                # A reasoning-unaware model rejects `think`; drop it and retry.
+                if attempt_think and e.response.status_code == 400:
+                    logger.warning("Model rejected think=true; retrying without it")
+                    continue
+                raise
 
     def close(self):
         self._client.close()

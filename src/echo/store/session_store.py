@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class Session:
     id: str
     user_id: int
-    name: str          # display title, auto-set from the first message
+    name: str
     agent_name: str
     messages: List[Dict[str, Any]]
 

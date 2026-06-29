@@ -1,7 +1,15 @@
 # configs/retrieval/api.yaml
 api:
   port: 8090
-  embedder_url: "http://embedder-cpu:8080" # "http://embedder-gpu:8080"  # or "http://localhost:8080" if running locally
-  index_path: "indexes/faiss" #null   # set once you have a saved index to load
+  host: "0.0.0.0"
+  embedder_url: "http://embedder:8080"  # shared compose alias (cpu or gpu); use http://localhost:8080 for a non-Docker run
+  index_path: "indexes/index"   # path to a saved index to load; leave unset to start empty
   prod: True
   log_level: "INFO"
+
+  # Hybrid retrieval fuses the FAISS dense results with the BM25 sparse results
+  # via Reciprocal Rank Fusion. When disabled, /search stays dense-only.
+  hybrid:
+    enabled: True
+    candidate_k: 50   # hits pulled from each of dense + sparse before fusion
+    rrf_k: 60         # RRF damping constant

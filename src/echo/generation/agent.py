@@ -1,22 +1,13 @@
+import json
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Iterator, List, Optional
 
 import httpx
 
 from echo.generation.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
-
-#Example
-# SYSTEM_PROMPT = (
-#     "You are a research assistant with access to tools. You MUST call tools using their "
-#     "exact registered function name — never invent a tool name. Available tools will be "
-#     "provided in the tools list for this request. Use them as needed to answer the user's "
-#     "question accurately. You may call tools multiple times. Once you have enough "
-#     "information, answer directly without calling any more tools. If you cannot find the "
-#     "answer, say so honestly — do not guess."
-# )
 
 MAX_RESULT_PREVIEW = 1024
 
@@ -30,6 +21,7 @@ class Agent:
         token: Optional[str] = None,
         max_steps: int = 5,
         temperature: float = 0.0,
+        think: bool = True,
         timeout: float = 120.0,
         max_retries: int = 3,
         messages: List[Dict[str, Any]] | None = None,
@@ -38,6 +30,7 @@ class Agent:
         self.tool_registry = tool_registry
         self.max_steps = max_steps
         self.temperature = temperature
+        self.think = think
         self.max_retries = max_retries
         # The agent reaches the model only over HTTP through the LLM API
         # (`POST /chat`); it never holds an OllamaClient. A bearer `token` (the
@@ -123,6 +116,92 @@ class Agent:
             "tool_calls_made": tool_call_log,
             "warning": "max_steps reached",
         }
+
+    # --- streaming -----------------------------------------------------------
+
+    def _chat_stream(self, tools: List[Dict[str, Any]] | None) -> Iterator[Dict[str, Any]]:
+        payload = {
+            "messages": self.messages,
+            "tools": tools,
+            "temperature": self.temperature,
+            "think": self.think,
+        }
+        with self._http.stream("POST", "/chat/stream", json=payload) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line:
+                    yield json.loads(line)
+
+    def _stream_step(self, tools: List[Dict[str, Any]] | None) -> Iterator[Dict[str, Any]]:
+        content_parts: List[str] = []
+        thinking_parts: List[str] = []
+        tool_calls = None
+
+        for chunk in self._chat_stream(tools):
+            message = chunk.get("message", {})
+            if message.get("thinking"):
+                thinking_parts.append(message["thinking"])
+                yield {"type": "thinking", "text": message["thinking"]}
+            if message.get("content"):
+                content_parts.append(message["content"])
+                yield {"type": "token", "text": message["content"]}
+            if message.get("tool_calls"):
+                tool_calls = message["tool_calls"]
+            if chunk.get("done"):
+                break
+
+        assistant_message: Dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+        if thinking_parts:
+            assistant_message["thinking"] = "".join(thinking_parts)
+        if tool_calls:
+            assistant_message["tool_calls"] = tool_calls
+        self.messages.append(assistant_message)
+        yield {"type": "step_done", "tool_calls": tool_calls, "content": assistant_message["content"]}
+
+    def send_stream(self, query: str) -> Iterator[Dict[str, Any]]:
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty")
+
+        self.messages.append({"role": "user", "content": query})
+        schemas = self.tool_registry.get_schemas()
+
+        for _ in range(self.max_steps):
+            tool_calls = None
+            content = ""
+            for event in self._stream_step(schemas):
+                if event["type"] == "step_done":
+                    tool_calls = event["tool_calls"]
+                    content = event["content"]
+                else:
+                    yield event
+
+            if not tool_calls:
+                yield {"type": "answer", "text": content}
+                return
+
+            for tool_call in tool_calls:
+                function = tool_call.get("function", {})
+                name = function.get("name")
+                args = function.get("arguments", {})
+                yield {"type": "tool_call", "name": name, "args": args}
+
+                try:
+                    result = str(self.tool_registry.execute(name, args))
+                except Exception as e:
+                    result = f"Error executing tool {name}: {e}"
+                    logger.error(result)
+
+                self.messages.append({"role": "tool", "tool_name": name, "content": result})
+                yield {"type": "tool_result", "name": name, "result": result[:MAX_RESULT_PREVIEW]}
+
+        logger.warning(f"Agent hit max_steps({self.max_steps}) without a final answer")
+        content = ""
+        for event in self._stream_step(None):  # fallback turn drops tools
+            if event["type"] == "step_done":
+                content = event["content"]
+            else:
+                yield event
+        yield {"type": "answer", "text": content, "warning": "max_steps reached"}
 
     def close(self):
         self._http.close()

@@ -1,0 +1,9 @@
+# configs/sparse_store/bm25.yaml
+# Lexical (BM25) index that runs alongside the FAISS dense index for hybrid
+# retrieval. Built offline (same corpus/order as the FAISS index, doc_id =
+# position in the .meta list), loaded by the retrieval service at startup.
+# These keys are passed straight to BM25Store(**sparse_store).
+sparse_store:
+  path: "indexes/bm25.pkl"   # pickle holding the fitted BM25 model + doc_ids
+  k1: 1.5                     # BM25 term-frequency saturation
+  b: 0.75                    # BM25 length normalization

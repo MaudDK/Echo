@@ -49,14 +49,17 @@ class BaseFAISSStore(BaseVectorStore):
         self.meta.extend(metadata)
         logger.info(f"Added {embedding.shape[0]} vectors. Total ({self.count} vectors)")
 
-    def search(self, query_embedding: np.ndarray, k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
+    def search_ids(self, query_embedding: np.ndarray, k: int = 5) -> List[Tuple[int, float]]:
         if self.count == 0:
             logger.warning("search() called on an empty index — returning no results")
             return []
 
         query_embedding = np.atleast_2d(query_embedding).astype(np.float32, copy=False)
         scores, idx = self.index.search(query_embedding, k)
-        return [(self.meta[i], float(scores[0][j])) for j, i in enumerate(idx[0]) if i != -1]
+        return [(int(i), float(scores[0][j])) for j, i in enumerate(idx[0]) if i != -1]
+
+    def search(self, query_embedding: np.ndarray, k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
+        return [(self.meta[i], score) for i, score in self.search_ids(query_embedding, k)]
 
     def save(self, path: str):
         dirname = os.path.dirname(path)

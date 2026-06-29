@@ -1,0 +1,5 @@
+llm:
+  base_url: "http://host.docker.internal:11434"
+  model: "hf.co/huihui-ai/Huihui-Qwythos-9B-Claude-Mythos-5-1M-abliterated-GGUF:Q6_K"
+  timeout: 120.0
+  max_retries: 3

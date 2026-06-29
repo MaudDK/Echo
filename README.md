@@ -1,141 +1,136 @@
 # Echo
 
-Echo is a self-hosted, modular RAG (Retrieval-Augmented Generation) system. It currently implements a production-grade **embedding service**, with retrieval, reranking, and generation services to follow.
+Echo is a self-hosted, modular **RAG (Retrieval-Augmented Generation)** system, built as a set of independently deployable FastAPI services that share one Python package (`echo`). The services communicate over HTTP, so each can be scaled, versioned, and swapped on its own.
 
-## Status
-
-Early development — embedder service is functional. Retrieval, reranking, and generation layers are not yet built.
+A React chat UI sits in front of a tool-calling LLM agent that retrieves from a hybrid (dense + sparse) index — all running on your own hardware, with the LLM served by a local Ollama.
 
 ## Architecture
 
-Echo is built as a set of independently deployable services, not a monolith. Each service is containerized separately so it can be scaled, versioned, and swapped independently.
-
 ```
-[Ingestion Pipeline] ──┐
-                        ├──> [Embedder Service] (this repo, currently)
-[Retrieval API] ───────┘
-        │
-        ▼
-[Vector Store] (planned)
-        │
-        ▼
-[Reranker] → [Generation] (planned)
-```
-
-## Embedder Service
-
-A FastAPI service wrapping `sentence-transformers`, with:
-
-- **Config-driven model loading** — swap embedding models via YAML, no code changes
-- **Query/passage prefix handling** — automatically applies the correct prefix convention for models that require it (E5, BGE, Qwen3, etc.), based on a maintained lookup table
-- **CPU and GPU Docker builds** — separate Dockerfiles, CPU build uses CPU-only torch wheels to avoid bloated images
-- **Offline-mode support** — can run without any Hugging Face network dependency once a model is cached
-- **Health checks** — `/health` endpoint for container orchestration readiness checks
-
-### Endpoints
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/health` | GET | Returns service status, loaded model, and device |
-| `/embed` | POST | Embeds a list of texts, returns vectors |
-
-**Example request:**
-
-```bash
-curl -X POST http://localhost:8080/embed \
-  -H "Content-Type: application/json" \
-  -d '{"inputs": ["hello world"], "is_query": true}'
+                 ┌───────────────┐
+   Browser ─────▶│   Frontend    │  React + Vite (port 3000)
+                 └──────┬────────┘
+                        │ HTTP
+                 ┌──────▼────────┐      ┌──────────────┐
+                 │  Generation   │─────▶│    Ollama    │  (on the host)
+                 │  (echo-llm)   │ /chat└──────────────┘
+                 │   port 8100   │
+                 │ auth·sessions │
+                 │  ·agent·tools │
+                 └──────┬────────┘
+                        │ search_documents tool (HTTP)
+                 ┌──────▼────────┐
+                 │   Retrieval   │  FAISS dense + BM25 sparse, fused via RRF
+                 │ (echo-retr.)  │
+                 │   port 8090   │
+                 └──────┬────────┘
+                        │ embed query (HTTP)
+                 ┌──────▼────────┐
+                 │   Embedder    │  sentence-transformers
+                 │ (echo-embed.) │
+                 │   port 8080   │
+                 └───────────────┘
 ```
 
-## Project Structure
+| Service | Image / script | Port | Role |
+|---|---|---|---|
+| **Embedder** | `echo-embedder` | 8080 | Wraps `sentence-transformers`; applies per-model query/passage prefixes. |
+| **Retrieval** | `echo-retrieval` | 8090 | Hybrid search — FAISS dense vectors + BM25 lexical, fused with Reciprocal Rank Fusion. Embeds queries via the embedder. |
+| **Generation** | `echo-llm` | 8100 | Multi-router app: token auth, per-user chat sessions, and a tool-calling agent backed by a local Ollama model. |
+| **Frontend** | — | 3000 | Streaming chat UI (login, sessions, live thinking/tool-call rendering). |
 
-```
-echo/
-├── configs/
-│   └── embedder/
-│       ├── embedder.yaml      # model name, device, batch size, normalization
-│       ├── api.yaml           # port, max batch size, prod flag, log level
-│       └── prefixes.yaml      # known query/passage prefix conventions per model
-├── src/
-│   └── echo/
-│       ├── api/
-│       │   └── embedder_api.py
-│       ├── indexing/
-│       │   └── embedders/
-│       │       ├── embedder.py
-│       │       └── prefixes.py
-│       └── config.py          # YAML config loader, shared across services
-├── Dockerfile.embedder.cpu
-├── Dockerfile.embedder.gpu
-├── docker-compose.yml
-├── .env.example
-└── pyproject.toml
-```
+The LLM itself runs in **Ollama on the host**, not in a container — the generation service reaches it at `host.docker.internal:11434`.
 
-## Getting Started
+## Quick start (Docker)
 
 ### Prerequisites
 
-- Python ≥ 3.10
-- Docker + Docker Compose (with `buildx` plugin)
-- (Optional, for GPU) `nvidia-container-toolkit` installed on the host
+- Docker + Docker Compose (with the `buildx` plugin)
+- [Ollama](https://ollama.com) running on the host, with a model pulled:
+  ```bash
+  ollama pull <your-model>      # e.g. a tool-calling capable model
+  ```
+- *(GPU only)* `nvidia-container-toolkit` installed on the host
 
-### Local setup (no Docker)
-
-```bash
-pip install -e .
-cp .env.example .env   # adjust values as needed
-echo-embedder
-```
-
-### Running with Docker
+### Run
 
 ```bash
-cp .env.example .env   # adjust HF_CACHE_PATH and ports as needed
-
-# CPU
-docker compose up embedder-cpu
-
-# GPU (requires nvidia-container-toolkit)
-docker compose up embedder-gpu
+cp .env.example .env            # set HF_CACHE_PATH, INDEX_PATH_DIR, ports, secret
+docker compose up               # full CPU stack (embedder, retrieval, llm, frontend)
+docker compose --profile gpu up # same stack with the GPU embedder
 ```
 
-The container mounts your local Hugging Face cache (`HF_CACHE_PATH` in `.env`) so models aren't re-downloaded on every rebuild, and mounts `configs/` so config changes take effect on restart without rebuilding the image.
+Only the **embedder** has CPU/GPU variants (different torch build); everything else is hardware-agnostic and reaches the embedder through the shared `embedder` network alias. `COMPOSE_PROFILES` in `.env` (default `cpu`) selects the variant for a bare `docker compose up`.
 
-### Configuration
+Then open the UI at **http://localhost:3000**, or hit the API directly — interactive docs are at **http://localhost:8100/docs**.
 
-| File | Purpose |
+Before you can log in you must **register**, which requires the signup secret (see [Configuration](#configuration)):
+
+```bash
+curl -X POST http://localhost:8100/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"me","password":"secret","signup_secret":"<your-secret>"}'
+```
+
+## Local development (no Docker)
+
+Each service is an editable install with its own extras:
+
+```bash
+pip install -e ".[embedder]"     # torch, sentence-transformers, numpy
+pip install -e ".[retrieval]"    # faiss-cpu, pandas, httpx, rank-bm25, tqdm
+pip install -e ".[generation]"   # httpx, bcrypt, ddgs
+pip install -e ".[embedder,retrieval]"   # both, for local end-to-end work
+
+echo-embedder      # serves the embedder on its api.yaml port
+echo-retrieval     # requires a reachable embedder
+echo-llm           # requires a reachable Ollama (and retrieval, if document_search is enabled)
+```
+
+When running outside Docker, point the `*_url` config values at `localhost` instead of the compose service names (each is documented inline in its YAML).
+
+The frontend is a standard Vite app:
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+## Configuration
+
+All runtime behavior is YAML-driven, resolved relative to `ECHO_CONFIGS_DIR` (defaults to `<repo>/configs`, set to `/app/configs` in the images). Loaded configs are cached per process, so changes need a restart to take effect.
+
+| File | Owns |
 |---|---|
-| `configs/embedder/embedder.yaml` | Which model to load, device, batch size, normalization |
-| `configs/embedder/api.yaml` | API port, max request batch size, prod/dev mode, log level |
-| `configs/embedder/prefixes.yaml` | Query/passage prefix conventions for known models |
-| `.env` | Local machine-specific values — Hugging Face cache path, exposed ports |
+| `configs/embedder/embedder.yaml` | Model, device, batch size, normalization |
+| `configs/embedder/api.yaml` | Embedder port, max batch, prod flag, log level |
+| `configs/embedder/prefixes.yaml` | Query/passage prefix conventions per model |
+| `configs/vector_store/faiss.yaml` | FAISS variant + `dim` (must match the model's output dim) |
+| `configs/sparse_store/bm25.yaml` | BM25 index path + parameters |
+| `configs/retrieval/api.yaml` | Retrieval port, embedder URL, index path, hybrid settings |
+| `configs/generation/api.yaml` | LLM-service host/port/CORS/logging |
+| `configs/generation/llm.yaml` | Ollama base URL, model, timeout, retries |
+| `configs/generation/agent.yaml` | Agent settings + tool toggles (`document_search`, `web_search`) |
+| `configs/auth/api.yaml` | `signup_secret` (gates registration) |
+| `configs/store/storage.yaml` | SQLite DB path + token TTL |
+| `.env` | Machine-specific values: cache path, index dir, ports, compose profile |
 
-Setting `prod: true` in `api.yaml` forces offline mode (`HF_HUB_OFFLINE=1`) and disables auto-reload — only use this once your target model is confirmed cached, since offline mode has no network fallback.
+**Secrets.** The registration gate reads `ECHO_SIGNUP_SECRET` from the environment if set, falling back to `configs/auth/api.yaml:signup_secret`. In production set the env var so the real secret never lands in git, and change the committed placeholder. An empty value disables registration.
 
-## Adding a New Embedding Model
+**`prod: true`** in an `api.yaml` forces Hugging Face offline mode (`HF_HUB_OFFLINE=1`) and disables auto-reload — only set it once the target model is confirmed cached locally.
 
-1. Add the model name to `configs/embedder/embedder.yaml`
-2. If the model requires query/passage prefixes, add an entry to `configs/embedder/prefixes.yaml`:
+## Building an index
 
-```yaml
-known_prefixes:
-  "your-org/your-model":
-    query: "query: "
-    passage: "passage: "
-```
+There is no indexing service — the retrieval service **loads** an index, it does not build one. Build offline with a standalone script that embeds your corpus through the embedder and calls `store.build(...)` / `store.save(path)`. The dense (FAISS) and sparse (BM25) stores must be built from the **same corpus in the same order**, since fusion keys on the shared `doc_id` (a document's position in the metadata list). Point `configs/retrieval/api.yaml:index_path` (and `configs/sparse_store/bm25.yaml:path`) at the results.
 
-If a model isn't listed, Echo logs a warning and falls back to no prefix — verify this is correct for your model before relying on it in production.
+## Extending
 
-## Roadmap
-
-- [ ] Vector store abstraction (FAISS, ChromaDB, Qdrant)
-- [ ] Hybrid retrieval (dense + sparse/BM25)
-- [ ] Reranking service
-- [ ] Generation service (LLM integration)
-- [ ] Evaluation harness (golden sets, retrieval metrics)
-- [ ] Observability (tracing, latency metrics)
+- **New embedding model** — add it to `configs/embedder/embedder.yaml`; if it needs prefixes, add an entry to `configs/embedder/prefixes.yaml`. Update `dim` in `faiss.yaml` to match.
+- **New FAISS variant** — subclass `BaseFAISSStore`, implement `_create_index()`, and register it in `indexing/vector_store/factory.py`.
+- **New tool for the agent** — register a name → JSON schema + handler in the `ToolRegistry` and toggle it in `configs/generation/agent.yaml`.
+- **New service** — a FastAPI app with a `lifespan`, a `run()` launcher, a `[project.scripts]` entry, and a config namespace under `configs/<svc>/`.
 
 ## License
 
-TBD
+Copyright © 2026 MaudDK. All rights reserved.
+
+This source code is proprietary. No permission is granted to use, copy, modify, distribute, or create derivative works without the express written consent of the copyright holder. See [LICENSE](LICENSE).

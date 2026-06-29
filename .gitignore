@@ -4,11 +4,12 @@ __pycache__/
 .venv/
 *.egg-info/
 indexes/
-frontend/
 
 # Secrets
+CLAUDE.md
 .env
 scripts/
-generation/
 hidden/
 outline.txt
+# Generation service SQLite databases
+data/

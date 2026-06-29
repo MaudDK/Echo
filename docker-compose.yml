@@ -1,56 +1,63 @@
+# Echo stack. The only thing that differs between CPU and GPU is the embedder
+# image (torch build), so that's the only service with two variants — selected
+# by the `cpu` / `gpu` compose profile. Everything else is hardware-agnostic and
+# reaches the embedder through the shared network alias `embedder`.
+#
+#   docker compose up                  # uses COMPOSE_PROFILES from .env (cpu)
+#   docker compose --profile gpu up    # GPU embedder instead
+#
+# Both embedder variants publish the alias `embedder`, so only one runs at a time
+# and the rest of the stack never needs to know which.
+
+x-embedder-common: &embedder-common
+  volumes:
+    - ./configs:/app/configs
+    - ${HF_CACHE_PATH}:/root/.cache/huggingface
+  ports:
+    - "${EMBEDDER_PORT:-8080}:8080"
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+  restart: unless-stopped
+  networks:
+    default:
+      aliases:
+        - embedder
+
 services:
   embedder-cpu:
+    <<: *embedder-common
+    profiles: [cpu]
     build:
       context: .
       dockerfile: Dockerfile.embedder.cpu
-    profiles: [cpu]
-    volumes:
-      - ./configs:/app/configs
-      - ${HF_CACHE_PATH}:/root/.cache/huggingface
-    ports:
-      - "${EMBEDDER_CPU_PORT}:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
 
   embedder-gpu:
+    <<: *embedder-common
+    profiles: [gpu]
     build:
       context: .
       dockerfile: Dockerfile.embedder.gpu
-    profiles: [gpu]
-    volumes:
-      - ./configs:/app/configs
-      - ${HF_CACHE_PATH}:/root/.cache/huggingface
-    ports:
-      - "${EMBEDDER_GPU_PORT}:8080"
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
 
-  faiss-rag-cpu:
+  retrieval:
     build:
       context: .
       dockerfile: Dockerfile.retrieval
-    profiles: [cpu]
     volumes:
       - ./configs:/app/configs
       - ${INDEX_PATH_DIR}:/app/indexes
     ports:
-      - "${RETRIEVAL_PORT}:8090"
-    depends_on:
-      embedder-cpu:
-        condition: service_healthy
+      - "${RETRIEVAL_PORT:-8090}:8090"
+    # No depends_on: the embedder is profile-gated under a different service name,
+    # so it can't be named here. retrieval health-checks the embedder at startup
+    # with backoff and `restart` rides out the embedder's warmup either way.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 10s
@@ -58,36 +65,33 @@ services:
       retries: 3
     restart: unless-stopped
 
-  faiss-rag-gpu:
+  echo-llm:
     build:
       context: .
-      dockerfile: Dockerfile.retrieval
-    profiles: [gpu]
+      dockerfile: Dockerfile.generation
     volumes:
       - ./configs:/app/configs
-      - ${INDEX_PATH_DIR}:/app/indexes
+      - ./data:/app/data
     ports:
-      - "${RETRIEVAL_PORT}:8090"
-    depends_on:
-      embedder-gpu:
-        condition: service_healthy
+      - "${GENERATION_PORT:-8100}:8100"
+    # Lets configs/generation/llm.yaml point base_url at an Ollama on the host
+    # (http://host.docker.internal:11434).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
       interval: 10s
       timeout: 5s
       retries: 3
     restart: unless-stopped
 
-# services:
-#   ollama:
-#     image: ollama/ollama:latest
-#     volumes:
-#       - ${OLLAMA_MODELS_PATH}:/root/.ollama
-#     ports:
-#       - "${OLLAMA_PORT}:11434"
-#     deploy:
-#       resources:
-#         reservations:
-#           devices:
-#             - capabilities: [gpu]
-#     restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      echo-llm:
+        condition: service_healthy
+    restart: unless-stopped

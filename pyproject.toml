@@ -3,10 +3,12 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Echo"
-version = "0.0.1"
-description = "TEMPORARY"
+name = "echo"
+version = "0.1.0"
+description = "Self-hosted, modular RAG system built as independently deployable FastAPI services."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "Proprietary" }
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -17,11 +19,13 @@ dependencies = [
 
 [project.optional-dependencies]
 embedder = ["torch", "sentence-transformers", "numpy"]
-retrieval = ["faiss-cpu", "pandas", "httpx"]
+retrieval = ["faiss-cpu", "pandas", "httpx", "numpy", "rank-bm25", "tqdm"]
+generation = ["httpx", "bcrypt", "ddgs"]
 
 [project.scripts]
 echo-embedder = "echo.api.embedder_api:run"
 echo-retrieval = "echo.api.retrieval_api:run"
+echo-llm = "echo.api.service:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

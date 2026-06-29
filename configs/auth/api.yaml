@@ -1,0 +1,6 @@
+api:
+  # Shared secret required to create an account (gates POST /auth/register).
+  # CHANGE THIS before deploying. In prod, prefer the ECHO_SIGNUP_SECRET env
+  # var (it overrides this value) so the real secret never lands in git.
+  # Leave empty to disable registration entirely.
+  signup_secret: "change-me"

@@ -16,6 +16,12 @@ class BaseVectorStore(ABC):
         pass
 
     @abstractmethod
+    def search_ids(self, query_embedding: np.ndarray, k: int = 5) -> List[Tuple[int, float]]:
+        """Like ``search`` but returns ``(doc_id, score)`` — the doc_id is the
+        position in ``meta``, used as the fusion key for hybrid retrieval."""
+        pass
+
+    @abstractmethod
     def save(self, path: str):
         pass
 

@@ -1,4 +1,5 @@
 import logging
+import os
 import secrets
 from contextlib import asynccontextmanager
 
@@ -57,7 +58,9 @@ class LoginResponse(BaseModel):
 
 @router.post("/register", status_code=201)
 def register(req: RegisterRequest):
-    expected = api_config.get("signup_secret", "")
+    # Env var wins so prod can set the secret without committing it; the YAML
+    # value is only a local/dev fallback. Empty in both disables registration.
+    expected = os.environ.get("ECHO_SIGNUP_SECRET") or api_config.get("signup_secret", "")
     if not expected:
         raise HTTPException(status_code=403, detail="Registration is disabled")
 

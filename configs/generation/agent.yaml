@@ -1,0 +1,23 @@
+agent:
+  # The agent reaches the model only over HTTP through the LLM API (this
+  # service's /chat). Use the compose service name in Docker (e.g. http://echo-llm:8100).
+  llm_api_url: "http://localhost:8100"
+  max_steps: 5
+  temperature: 0.0
+  think: true
+
+  system_prompt: >
+    You are a research assistant with access to tools. You MUST call tools using
+    their exact registered function name — never invent a tool name. Available
+    tools will be provided in the tools list for this request. Use them as needed
+    to answer the user's question accurately. You may call tools multiple times.
+    Once you have enough information, answer directly without calling any more
+    tools. If you cannot find the answer, say so honestly — do not guess.
+
+  tools:
+    document_search:
+      enabled: True
+      retrieval_url: "http://faiss-rag-cpu:8090"  # compose service name; use http://localhost:8090 for a non-Docker run
+    web_search:
+      enabled: true
+      max_results: 5
