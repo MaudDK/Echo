@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
         db_path=storage_config.get("users_db", "data/generation/users.db"),
         token_ttl_seconds=storage_config.get("token_ttl_seconds", 86400),
     )
+    user_store.purge_expired_tokens()
     yield
 
 def current_user(authorization: str = Header(..., description="Bearer <token>")) -> User:
