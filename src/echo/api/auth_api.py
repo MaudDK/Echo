@@ -24,7 +24,7 @@ user_store: UserStore | None = None
 async def lifespan(app: FastAPI):
     global user_store
     user_store = UserStore(
-        db_path=storage_config.get("users_db", "data/generation/users.db"),
+        db_path=storage_config.get("db", "data/stores.db"),
         token_ttl_seconds=storage_config.get("token_ttl_seconds", 86400),
     )
     user_store.purge_expired_tokens()
